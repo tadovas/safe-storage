@@ -1,6 +1,6 @@
-type HashList<T> = Vec<T>;
+use std::fmt::{Debug, Formatter};
 
-type ProofList<T> = Vec<Option<T>>;
+type HashList<T> = Vec<T>;
 
 pub trait Hash<T> {
     fn hash_of(left: &T, right: &T) -> T;
@@ -64,8 +64,23 @@ impl<T> Tree<T> {
         self.update_next_layer(layer + 1, hashed, right_child_added || update_last_hash);
     }
 
-    pub fn proof_for_nth(&self, _index: usize) -> Vec<Option<T>> {
-        Default::default()
+    pub fn proof_for(&self, index: usize) -> Option<Proof<T>>
+    where
+        T: Clone,
+    {
+        let direct_sibling = proof_node_with_sibling(&self.leaves, index);
+
+        let mut proof_nodes = vec![direct_sibling];
+        for layer in &self.nodes {
+            if layer.len() == 1 {
+                break;
+            }
+            let index = index / 2;
+
+            proof_nodes.push(proof_node_with_sibling(layer, index));
+        }
+
+        Some(Proof { nodes: proof_nodes })
     }
 }
 
@@ -93,6 +108,57 @@ where
     };
 
     (T::hash_of(left, right), right_child_exists)
+}
+
+fn proof_node_with_sibling<T: Clone>(
+    hash_list: &HashList<T>,
+    index: usize,
+) -> Option<ProofNode<T>> {
+    let sibling_is_on_the_right = index % 2 == 0;
+
+    if sibling_is_on_the_right {
+        hash_list.get(index + 1)
+    } else {
+        hash_list.get(index - 1)
+    }
+    .map(|h| ProofNode {
+        right_leaf: sibling_is_on_the_right,
+        hash: h.clone(),
+    })
+}
+
+pub struct ProofNode<T> {
+    right_leaf: bool,
+    hash: T,
+}
+
+impl<T: PartialEq> PartialEq for ProofNode<T> {
+    fn eq(&self, other: &Self) -> bool {
+        self.right_leaf == other.right_leaf && self.hash == other.hash
+    }
+}
+
+impl<T: Debug> Debug for ProofNode<T> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ProofNode")
+            .field("right_leaf", &self.right_leaf)
+            .field("hash", &self.hash)
+            .finish()
+    }
+}
+
+pub struct Proof<T> {
+    nodes: Vec<Option<ProofNode<T>>>,
+}
+
+impl<T> Proof<T> {
+    pub fn verify(&self, root_hash: &T, hash: &T) -> bool
+    where
+        T: Hash<T>,
+        T: PartialEq,
+    {
+        root_hash == hash
+    }
 }
 
 #[cfg(test)]
@@ -160,5 +226,25 @@ mod test {
         // layer: 3 (204321)
 
         assert_eq!(tree.root(), Some(204321))
+    }
+
+    #[test]
+    pub fn test_proof_verification() {
+        let mut tree = Tree::new();
+        assert!(tree.root().is_none());
+
+        tree.append(10);
+        tree.append(200);
+
+        assert_eq!(tree.root(), Some(210));
+
+        let proof = tree.proof_for(1).expect("should be present");
+        assert_eq!(
+            vec![Some(ProofNode {
+                right_leaf: false,
+                hash: 10
+            })],
+            proof.nodes
+        )
     }
 }
