@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Formatter};
+use std::fmt::Debug;
 
 type HashList<T> = Vec<T>;
 
@@ -64,9 +64,9 @@ impl<T> Tree<T> {
         self.update_next_layer(layer + 1, hashed, right_child_added || update_last_hash);
     }
 
-    pub fn proof_for(&self, index: usize) -> Option<Proof<T>>
+    pub fn proof_for(&self, mut index: usize) -> Option<Proof<T>>
     where
-        T: Clone,
+        T: Clone + Debug + PartialEq,
     {
         let direct_sibling = proof_node_with_sibling(&self.leaves, index);
 
@@ -75,8 +75,8 @@ impl<T> Tree<T> {
             if layer.len() == 1 {
                 break;
             }
-            let index = index / 2;
 
+            index /= 2;
             proof_nodes.push(proof_node_with_sibling(layer, index));
         }
 
@@ -110,10 +110,10 @@ where
     (T::hash_of(left, right), right_child_exists)
 }
 
-fn proof_node_with_sibling<T: Clone>(
-    hash_list: &HashList<T>,
-    index: usize,
-) -> Option<ProofNode<T>> {
+fn proof_node_with_sibling<T>(hash_list: &HashList<T>, index: usize) -> ProofNode<T>
+where
+    T: Clone + Debug + PartialEq,
+{
     let sibling_is_on_the_right = index % 2 == 0;
 
     if sibling_is_on_the_right {
@@ -121,43 +121,46 @@ fn proof_node_with_sibling<T: Clone>(
     } else {
         hash_list.get(index - 1)
     }
-    .map(|h| ProofNode {
-        right_leaf: sibling_is_on_the_right,
-        hash: h.clone(),
+    .map(|h| match sibling_is_on_the_right {
+        true => ProofNode::RightSiblign(h.clone()),
+        false => ProofNode::LeftSibling(h.clone()),
     })
+    .unwrap_or(ProofNode::None)
 }
 
-pub struct ProofNode<T> {
-    right_leaf: bool,
-    hash: T,
+#[derive(Debug, PartialEq)]
+pub enum ProofNode<T>
+where
+    T: Debug,
+    T: PartialEq,
+{
+    None,
+    RightSiblign(T),
+    LeftSibling(T),
 }
 
-impl<T: PartialEq> PartialEq for ProofNode<T> {
-    fn eq(&self, other: &Self) -> bool {
-        self.right_leaf == other.right_leaf && self.hash == other.hash
-    }
+#[derive(Debug, PartialEq)]
+pub struct Proof<T>
+where
+    T: Debug + PartialEq,
+{
+    nodes: Vec<ProofNode<T>>,
 }
 
-impl<T: Debug> Debug for ProofNode<T> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("ProofNode")
-            .field("right_leaf", &self.right_leaf)
-            .field("hash", &self.hash)
-            .finish()
-    }
-}
-
-pub struct Proof<T> {
-    nodes: Vec<Option<ProofNode<T>>>,
-}
-
-impl<T> Proof<T> {
+impl<T> Proof<T>
+where
+    T: Debug + PartialEq,
+{
     pub fn verify(&self, root_hash: &T, hash: &T) -> bool
     where
-        T: Hash<T>,
-        T: PartialEq,
+        T: Hash<T> + Clone,
     {
-        root_hash == hash
+        let calculated_root = self.nodes.iter().fold(hash.clone(), |h, node| match *node {
+            ProofNode::None => T::hash_of(&h, &h),
+            ProofNode::RightSiblign(ref right_sibling_hash) => T::hash_of(&h, right_sibling_hash),
+            ProofNode::LeftSibling(ref left_sibling_hash) => T::hash_of(left_sibling_hash, &h),
+        });
+        *root_hash == calculated_root
     }
 }
 
@@ -229,7 +232,7 @@ mod test {
     }
 
     #[test]
-    pub fn test_proof_verification() {
+    pub fn test_generated_proof() {
         let mut tree = Tree::new();
         assert!(tree.root().is_none());
 
@@ -239,12 +242,27 @@ mod test {
         assert_eq!(tree.root(), Some(210));
 
         let proof = tree.proof_for(1).expect("should be present");
-        assert_eq!(
-            vec![Some(ProofNode {
-                right_leaf: false,
-                hash: 10
-            })],
-            proof.nodes
-        )
+        assert_eq!(vec![ProofNode::LeftSibling(10)], proof.nodes)
+    }
+
+    #[test]
+    pub fn test_proof_verification() {
+        let mut tree = Tree::new();
+        assert!(tree.root().is_none());
+
+        tree.append(1);
+        tree.append(20);
+        tree.append(300);
+        tree.append(4_000);
+        tree.append(50_000);
+        tree.append(600_000);
+        tree.append(7_000_000);
+        tree.append(80_000_000);
+
+        assert_eq!(tree.root(), Some(87654321));
+        let root = tree.root().expect("should exist");
+
+        let proof = tree.proof_for(4).expect("should exist");
+        assert!(proof.verify(&root, &50000))
     }
 }
