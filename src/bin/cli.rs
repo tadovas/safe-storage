@@ -17,7 +17,7 @@ async fn main() -> anyhow::Result<()> {
 
     let file = client.download_file(file.id).await?;
     println!(
-        "file: {} with id: {} had: [{}]",
+        "file: {} with id: {} contains: [{}]",
         file.name,
         file.id,
         String::from_utf8_lossy(&file.content)
