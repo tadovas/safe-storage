@@ -1,4 +1,4 @@
-use crate::api::{File, FileContent, FileList, NewFile};
+use crate::api::{File, FileContent, FileList, NewFile, RootHash};
 use anyhow::anyhow;
 use reqwest::Response;
 use serde::de::DeserializeOwned;
@@ -36,6 +36,11 @@ impl Client {
 
     pub async fn download_file(&self, id: u32) -> anyhow::Result<FileContent> {
         let url = format!("{}/files/{}", self.api_base, id);
+        self.get(url).await
+    }
+
+    pub async fn fetch_root(&self) -> anyhow::Result<RootHash> {
+        let url = format!("{}/root", self.api_base);
         self.get(url).await
     }
 

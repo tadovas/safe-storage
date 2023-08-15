@@ -1,5 +1,5 @@
 use crate::merkle;
-use crate::merkle::Sha3Proof;
+use crate::sha3::hash_content;
 
 pub struct Content {
     name: String,
@@ -21,6 +21,7 @@ impl Storage {
     }
 
     pub fn add_new_file(&mut self, name: String, content: Vec<u8>) -> usize {
+        self.tree.append(hash_content(&content));
         self.files.push(Content { name, content });
         self.files.len() - 1
     }
@@ -33,7 +34,7 @@ impl Storage {
             .collect()
     }
 
-    pub fn get_file_by_id(&self, id: usize) -> Option<(String, Vec<u8>, Sha3Proof)> {
+    pub fn get_file_by_id(&self, id: usize) -> Option<(String, Vec<u8>, merkle::Sha3Proof)> {
         self.files.get(id).map(|c| {
             (
                 c.name.clone(),

@@ -1,4 +1,5 @@
 use safe_storage::client::Client;
+use safe_storage::sha3::hash_content;
 
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -15,12 +16,21 @@ async fn main() -> anyhow::Result<()> {
     let file_list = client.get_file_list().await?;
     println!("{:?}", file_list);
 
+    let root_hash = client.fetch_root().await?.hash;
+    println!("{root_hash}");
+
     let file = client.download_file(file.id).await?;
     println!(
         "file: {} with id: {} contains: [{}]",
         file.name,
         file.id,
         String::from_utf8_lossy(&file.content)
+    );
+    println!("Proof: {:?}", file.proof);
+
+    println!(
+        "Verified: {}",
+        file.proof.verify(&root_hash, &hash_content(&file.content))
     );
     Ok(())
 }
