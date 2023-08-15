@@ -1,11 +1,11 @@
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 use sha3::digest::{FixedOutput, Output};
 use sha3::{Digest, Sha3_256};
-use std::fmt::{Display, Formatter};
+use std::fmt::{Debug, Display, Formatter};
 use std::str;
 use std::str::FromStr;
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Clone, PartialEq)]
 pub struct Hash(Output<Sha3_256>);
 
 pub fn hash_content(content: impl AsRef<[u8]>) -> Hash {
@@ -34,6 +34,12 @@ impl Display for Hash {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         let str = hex::encode(self.0);
         f.serialize_str(&str)
+    }
+}
+
+impl Debug for Hash {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        f.serialize_str(&self.to_string())
     }
 }
 

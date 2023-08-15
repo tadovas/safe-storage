@@ -26,7 +26,7 @@ async fn main() -> anyhow::Result<()> {
         file.id,
         String::from_utf8_lossy(&file.content)
     );
-    println!("Proof: {:?}", file.proof);
+    println!("{:?}", file.proof);
 
     println!(
         "Verified: {}",
