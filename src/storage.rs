@@ -1,4 +1,5 @@
-use std::sync::Mutex;
+use crate::merkle;
+use crate::merkle::Sha3Proof;
 
 pub struct Content {
     name: String,
@@ -7,33 +8,44 @@ pub struct Content {
 
 #[derive(Default)]
 pub struct Storage {
-    files: Mutex<Vec<Content>>,
+    tree: merkle::Sha3Tree,
+    files: Vec<Content>,
 }
 
 impl Storage {
     pub fn new() -> Self {
         Self {
-            files: Mutex::new(Default::default()),
+            files: Default::default(),
+            tree: merkle::Sha3Tree::new(),
         }
     }
 
-    pub fn add_new_file(&self, name: String, content: Vec<u8>) -> usize {
-        let mut files = self.files.lock().expect("should lock");
-        files.push(Content { name, content });
-        files.len() - 1
+    pub fn add_new_file(&mut self, name: String, content: Vec<u8>) -> usize {
+        self.files.push(Content { name, content });
+        self.files.len() - 1
     }
 
     pub fn list_all_files(&self) -> Vec<(usize, String, Vec<u8>)> {
-        let files = self.files.lock().expect("should lock");
-        files
+        self.files
             .iter()
             .enumerate()
             .map(|(i, v)| (i, v.name.clone(), v.content.clone()))
             .collect()
     }
 
-    pub fn get_file_by_id(&self, id: usize) -> Option<(String, Vec<u8>)> {
-        let files = self.files.lock().expect("should lock");
-        files.get(id).map(|c| (c.name.clone(), c.content.clone()))
+    pub fn get_file_by_id(&self, id: usize) -> Option<(String, Vec<u8>, Sha3Proof)> {
+        self.files.get(id).map(|c| {
+            (
+                c.name.clone(),
+                c.content.clone(),
+                self.tree
+                    .proof_for(id)
+                    .expect("should be present since we found file with same id"),
+            )
+        })
+    }
+
+    pub fn root_hash(&self) -> Option<merkle::Sha3Hash> {
+        self.tree.root()
     }
 }

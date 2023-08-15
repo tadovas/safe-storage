@@ -1,3 +1,4 @@
+use crate::merkle;
 use serde::Deserialize;
 use serde::Serialize;
 
@@ -13,15 +14,12 @@ pub struct FileList {
 }
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Proof {}
-
-#[derive(Debug, Serialize, Deserialize)]
 pub struct FileContent {
     pub id: u32,
     pub name: String,
     #[serde(with = "base64")]
     pub content: Vec<u8>,
-    pub proof: Proof,
+    pub proof: merkle::Sha3Proof,
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -29,6 +27,11 @@ pub struct NewFile {
     #[serde(with = "base64")]
     pub content: Vec<u8>,
     pub name: String,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub struct RootHash {
+    pub hash: merkle::Sha3Hash,
 }
 
 mod base64 {

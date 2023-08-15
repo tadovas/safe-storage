@@ -1,3 +1,6 @@
+use crate::sha3;
+use serde::de::DeserializeOwned;
+use serde::{Deserialize, Serialize};
 use std::fmt::Debug;
 
 type HashList<T> = Vec<T>;
@@ -66,7 +69,7 @@ impl<T> Tree<T> {
 
     pub fn proof_for(&self, mut index: usize) -> Option<Proof<T>>
     where
-        T: Clone + Debug + PartialEq,
+        T: Clone + Debug + PartialEq + Serialize + DeserializeOwned,
     {
         let direct_sibling = proof_node_with_sibling(&self.leaves, index);
 
@@ -112,7 +115,7 @@ where
 
 fn proof_node_with_sibling<T>(hash_list: &HashList<T>, index: usize) -> ProofNode<T>
 where
-    T: Clone + Debug + PartialEq,
+    T: Clone + Debug + PartialEq + Serialize + DeserializeOwned,
 {
     let sibling_is_on_the_right = index % 2 == 0;
 
@@ -128,7 +131,7 @@ where
     .unwrap_or(ProofNode::None)
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub enum ProofNode<T>
 where
     T: Debug,
@@ -139,7 +142,7 @@ where
     LeftSibling(T),
 }
 
-#[derive(Debug, PartialEq)]
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
 pub struct Proof<T>
 where
     T: Debug + PartialEq,
@@ -163,6 +166,16 @@ where
         *root_hash == calculated_root
     }
 }
+
+impl Hash<sha3::Hash> for sha3::Hash {
+    fn hash_of(left: &sha3::Hash, right: &sha3::Hash) -> sha3::Hash {
+        sha3::hash_both(left, right)
+    }
+}
+
+pub type Sha3Hash = sha3::Hash;
+pub type Sha3Tree = Tree<Sha3Hash>;
+pub type Sha3Proof = Proof<Sha3Hash>;
 
 #[cfg(test)]
 mod test {
