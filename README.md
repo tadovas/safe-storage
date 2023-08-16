@@ -25,8 +25,6 @@ Client is cli based tool:
 ### Client arguments:
 ```
 cargo run --bin cli -- help
-    Finished dev [unoptimized + debuginfo] target(s) in 0.08s
-     Running `target/debug/cli help`
 A simple command line interface to interact with safe-storage server (must be already running)
 
 Usage: cli [OPTIONS] <COMMAND>
