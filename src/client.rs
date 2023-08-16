@@ -22,13 +22,13 @@ impl Client {
         self.get(url).await
     }
 
-    pub async fn upload_new_file(&self, filename: String, content: &[u8]) -> anyhow::Result<File> {
+    pub async fn upload_new_file(&self, filename: &str, content: &[u8]) -> anyhow::Result<File> {
         let url = format!("{}/files", self.api_base);
         self.post(
             url,
             NewFile {
                 content: content.to_vec(),
-                name: filename,
+                name: filename.to_string(),
             },
         )
         .await
