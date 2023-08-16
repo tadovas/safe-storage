@@ -1,3 +1,4 @@
+use anyhow::anyhow;
 use clap::{ArgAction, Parser, Subcommand};
 use safe_storage::client::Client;
 use safe_storage::merkle;
@@ -85,6 +86,10 @@ async fn upload_files(
     let remote_hash = client.fetch_root().await?.hash;
     println!("Local  hash: {local_hash}");
     println!("Remote hash: {remote_hash}");
+    if local_hash != remote_hash {
+        println!("Local root hash differs from remote hash - multiple uploads detected, which is not supported yet. Verification won't work");
+        println!("Service restart is required to clean the state")
+    }
 
     store_state(
         state_filename,
@@ -107,8 +112,7 @@ async fn download_file(
     let file_hash = hash_content(&file.content);
     let verified = file.proof.verify(&local_root_hash, &file_hash);
     if !verified {
-        println!("Verification failed");
-        return Ok(());
+        return Err(anyhow!("Verification failed!"));
     }
     println!("File contents verified");
     let path = save_as.unwrap_or(file.name);
