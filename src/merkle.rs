@@ -167,6 +167,105 @@ where
     }
 }
 
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum NodeState<T> {
+    Partial(T),
+    Full,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct LightNode<T> {
+    hash: T,
+    state: NodeState<T>,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct LightTree<T>
+where
+    T: Debug + PartialEq,
+{
+    nodes: Vec<LightNode<T>>,
+}
+impl<T> LightTree<T>
+where
+    T: Debug + PartialEq,
+{
+    pub fn new() -> Self {
+        Self { nodes: vec![] }
+    }
+
+    pub fn append(&mut self, elem: T)
+    where
+        T: Clone + Hash<T>,
+    {
+        if self.nodes.is_empty() {
+            self.nodes.push(LightNode {
+                hash: T::hash_of(&elem, &elem),
+                state: NodeState::Partial(elem),
+            });
+            return;
+        }
+
+        if let Some(hash) = self
+            .nodes
+            .last()
+            .filter(|node| node.state == NodeState::Full)
+            .map(|node| &node.hash)
+        {
+            // fully filled node - add additional partial on top to save hash of full root node
+            self.nodes.push(LightNode {
+                hash: hash.clone(),
+                state: NodeState::Partial(hash.clone()),
+            })
+        }
+
+        let mut next_hash = elem;
+        let mut new_element_stored = false;
+        for node in self.nodes.iter_mut() {
+            let (new_state, new_hash) = match node.state {
+                NodeState::Partial(ref left_hash) if !new_element_stored => {
+                    new_element_stored = true;
+                    (NodeState::Full, T::hash_of(&left_hash, &next_hash))
+                }
+
+                NodeState::Partial(ref left_hash) => (
+                    NodeState::Partial(left_hash.clone()),
+                    T::hash_of(&left_hash, &next_hash),
+                ),
+
+                NodeState::Full => {
+                    new_element_stored = true;
+                    (
+                        NodeState::Partial(next_hash.clone()),
+                        T::hash_of(&next_hash, &next_hash),
+                    )
+                }
+            };
+            *node = LightNode {
+                state: new_state,
+                hash: new_hash.clone(),
+            };
+            next_hash = new_hash;
+        }
+    }
+
+    pub fn root(&self) -> Option<T>
+    where
+        T: Clone + Hash<T>,
+    {
+        self.nodes.last().map(|node| node.hash.clone())
+    }
+}
+
+impl<T> Default for LightTree<T>
+where
+    T: Debug + PartialEq,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Hash<sha3::Hash> for sha3::Hash {
     fn hash_of(left: &sha3::Hash, right: &sha3::Hash) -> sha3::Hash {
         sha3::hash_both(left, right)
@@ -276,6 +375,27 @@ mod test {
         let root = tree.root().expect("should exist");
 
         let proof = tree.proof_for(4).expect("should exist");
-        assert!(proof.verify(&root, &50000))
+        assert!(proof.verify(&root, &50_000))
+    }
+
+    #[test]
+    pub fn test_lightweight_tree_proof() {
+        let mut tree = Tree::new();
+        let mut light_tree = LightTree::new();
+
+        // for each added element tree and light_tree root nodes need to be equal
+        for i in 0..=3 {
+            let value = ((i + 1) * u32::pow(10, i)) as i32;
+            tree.append(value);
+            light_tree.append(value);
+
+            println!("{light_tree:#?}");
+
+            assert_eq!(
+                tree.root(),
+                light_tree.root(),
+                "comparing at {i} iteration after value {value} insertion"
+            );
+        }
     }
 }
