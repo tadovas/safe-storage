@@ -68,19 +68,19 @@ async fn upload_files(
     files: Vec<String>,
 ) -> anyhow::Result<()> {
     let client = Client::new(server_url);
-    let mut merkle_tree = merkle::Sha3Tree::new();
+    let mut light_tree = load_state(state_filename.clone()).await?.light_tree;
     if files.is_empty() {
         println!("Nothing to upload");
         return Ok(());
     }
     for file in files {
         let content = tokio::fs::read(&file).await?;
-        merkle_tree.append(hash_content(&content));
+        light_tree.append(hash_content(&content));
         let new_file = client.upload_new_file(&file, &content).await?;
         println!("{file} uploaded with id: {}", new_file.id);
     }
 
-    let local_hash = merkle_tree
+    let local_hash = light_tree
         .root()
         .expect("should be present if at least one file was uploaded");
     let remote_hash = client.fetch_root().await?.hash;
@@ -91,13 +91,7 @@ async fn upload_files(
         println!("Service restart is required to clean the state")
     }
 
-    store_state(
-        state_filename,
-        LocalState {
-            root_hash: local_hash,
-        },
-    )
-    .await
+    store_state(state_filename, LocalState { light_tree }).await
 }
 
 async fn download_file(
@@ -106,11 +100,13 @@ async fn download_file(
     id: u32,
     save_as: Option<String>,
 ) -> anyhow::Result<()> {
-    let local_root_hash = load_state(state_filename).await?.root_hash;
+    let light_tree = load_state(state_filename).await?.light_tree;
     let client = Client::new(server_url);
     let file = client.download_file(id).await?;
     let file_hash = hash_content(&file.content);
-    let verified = file.proof.verify(&local_root_hash, &file_hash);
+    let verified = file
+        .proof
+        .verify(&light_tree.root().expect("must be present"), &file_hash);
     if !verified {
         return Err(anyhow!("Verification failed!"));
     }
@@ -123,7 +119,7 @@ async fn download_file(
 
 #[derive(Debug, Serialize, Deserialize)]
 struct LocalState {
-    root_hash: merkle::Sha3Hash,
+    light_tree: merkle::Sha3LightTree,
 }
 
 async fn load_state(filename: String) -> anyhow::Result<LocalState> {
