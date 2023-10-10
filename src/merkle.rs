@@ -9,6 +9,7 @@ pub trait Hash<T> {
     fn hash_of(left: &T, right: &T) -> T;
 }
 
+#[derive(Serialize, Deserialize)]
 pub struct Tree<T> {
     leaves: HashList<T>,
     nodes: Vec<HashList<T>>,
@@ -167,6 +168,143 @@ where
     }
 }
 
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+enum NodeState<T> {
+    PartialLeft(T),
+    PartialRight(T),
+    Full,
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct LightNode<T> {
+    hash: T,
+    state: NodeState<T>,
+}
+
+impl<T> LightNode<T>
+where
+    T: Clone + Hash<T>,
+{
+    fn new_node(
+        &self,
+        hash: T,
+        mut new_element_stored: bool,
+        full_previous_node: bool,
+    ) -> (LightNode<T>, bool) {
+        let (state, hash) = match self.state {
+            NodeState::PartialLeft(ref left_hash) => {
+                assert!(new_element_stored);
+                (
+                    if full_previous_node {
+                        NodeState::PartialRight(hash.clone())
+                    } else {
+                        NodeState::PartialLeft(left_hash.clone())
+                    },
+                    T::hash_of(&hash, &hash),
+                )
+            }
+            NodeState::PartialRight(ref left_hash) if !new_element_stored => {
+                new_element_stored = true;
+                (NodeState::Full, T::hash_of(&left_hash, &hash))
+            }
+
+            NodeState::PartialRight(ref left_hash) => (
+                if full_previous_node {
+                    NodeState::Full
+                } else {
+                    NodeState::PartialRight(left_hash.clone())
+                },
+                T::hash_of(&left_hash, &hash),
+            ),
+
+            NodeState::Full if !new_element_stored => {
+                new_element_stored = true;
+                (
+                    NodeState::PartialRight(hash.clone()),
+                    T::hash_of(&hash, &hash),
+                )
+            }
+
+            NodeState::Full => (
+                NodeState::PartialLeft(hash.clone()),
+                T::hash_of(&hash, &hash),
+            ),
+        };
+
+        (LightNode { state, hash }, new_element_stored)
+    }
+}
+
+#[derive(Debug, PartialEq, Serialize, Deserialize)]
+pub struct LightTree<T>
+where
+    T: Debug + PartialEq,
+{
+    nodes: Vec<LightNode<T>>,
+}
+impl<T> LightTree<T>
+where
+    T: Debug + PartialEq,
+{
+    pub fn new() -> Self {
+        Self { nodes: vec![] }
+    }
+
+    pub fn append(&mut self, elem: T)
+    where
+        T: Clone + Hash<T>,
+    {
+        if self.nodes.is_empty() {
+            self.nodes.push(LightNode {
+                hash: T::hash_of(&elem, &elem),
+                state: NodeState::PartialRight(elem),
+            });
+            return;
+        }
+
+        if let Some(hash) = self
+            .nodes
+            .last()
+            .filter(|node| node.state == NodeState::Full)
+            .map(|node| &node.hash)
+        {
+            // fully filled node - add additional partial on top to save hash of full root node
+            self.nodes.push(LightNode {
+                hash: hash.clone(),
+                state: NodeState::PartialRight(hash.clone()),
+            })
+        }
+
+        let mut next_hash = elem;
+        let mut new_element_stored = false;
+        let mut full_previous_node = false;
+        for node in self.nodes.iter_mut() {
+            let (new_node, stored) =
+                node.new_node(next_hash.clone(), new_element_stored, full_previous_node);
+            new_element_stored = stored;
+            *node = new_node;
+            full_previous_node = node.state == NodeState::Full;
+            next_hash = node.hash.clone();
+        }
+    }
+
+    pub fn root(&self) -> Option<T>
+    where
+        T: Clone + Hash<T>,
+    {
+        self.nodes.last().map(|node| node.hash.clone())
+    }
+}
+
+impl<T> Default for LightTree<T>
+where
+    T: Debug + PartialEq,
+{
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Hash<sha3::Hash> for sha3::Hash {
     fn hash_of(left: &sha3::Hash, right: &sha3::Hash) -> sha3::Hash {
         sha3::hash_both(left, right)
@@ -177,12 +315,22 @@ pub type Sha3Hash = sha3::Hash;
 pub type Sha3Tree = Tree<Sha3Hash>;
 pub type Sha3Proof = Proof<Sha3Hash>;
 
+pub type Sha3LightTree = LightTree<Sha3Hash>;
+
 #[cfg(test)]
 mod test {
     use super::*;
+    use crate::sha3::hash_content;
+    use std::u64;
 
     impl Hash<i32> for i32 {
         fn hash_of(left: &i32, right: &i32) -> i32 {
+            *left + *right
+        }
+    }
+
+    impl Hash<u64> for u64 {
+        fn hash_of(left: &u64, right: &u64) -> u64 {
             *left + *right
         }
     }
@@ -276,6 +424,51 @@ mod test {
         let root = tree.root().expect("should exist");
 
         let proof = tree.proof_for(4).expect("should exist");
-        assert!(proof.verify(&root, &50000))
+        assert!(proof.verify(&root, &50_000))
+    }
+
+    #[test]
+    pub fn test_lightweight_tree_proof() {
+        let mut tree = Tree::new();
+        let mut light_tree = LightTree::new();
+
+        // for each added element tree and light_tree root nodes need to be equal
+        for i in 0..=16 {
+            let value = (i as u64 + 1) * u64::pow(10, i);
+            tree.append(value);
+            light_tree.append(value);
+
+            println!("After {value} addition");
+            println!("{light_tree:#?}");
+
+            assert_eq!(
+                tree.root(),
+                light_tree.root(),
+                "comparing at {i} iteration after value {value} insertion"
+            );
+        }
+    }
+
+    #[test]
+    #[ignore = "Super naive m tree vs light tree size comparision"]
+    pub fn size_comparision() {
+        let mut tree = Sha3Tree::new();
+        let mut light_tree = Sha3LightTree::new();
+
+        for i in 0..100000u64 {
+            let hash = hash_content(i.to_be_bytes().as_slice());
+            tree.append(hash.clone());
+            light_tree.append(hash.clone());
+
+            assert_eq!(tree.root(), light_tree.root());
+        }
+
+        let tree_bytes = serde_json::to_string(&tree).expect("should serialize");
+        let light_tree_bytes = serde_json::to_string(&light_tree).expect("should serialize");
+
+        println!(
+            "Size difference is: {}",
+            tree_bytes.len() / light_tree_bytes.len()
+        )
     }
 }
